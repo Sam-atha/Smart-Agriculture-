@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flood Help Alert</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+      position: relative;
+    }
+    button {
+      margin: 0.5rem;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #helpBtn {
+      background: red;
+      color: white;
+    }
+    dialog {
+      border: none;
+      border-radius: 8px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    }
+    .dialog-actions {
+      margin-top: 1rem;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+    #status {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      border-radius: 6px;
+      display: none;
+    }
+    #status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    #status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    /* Full-screen Flood Alert */
+    #floodAlert {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: red;
+      color: white;
+      font-size: 2rem;
+      font-weight: bold;
+      z-index: 9999;
+      text-align: center;
+      padding-top: 30%;
+      box-sizing: border-box;
+      animation: flash 1s infinite;
+    }
+
+    @keyframes flash {
+      0% { background: red; }
+      50% { background: darkred; }
+      100% { background: red; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Emergency Help System</h1>
+  <p>Click below if you need assistance during a flood situation.</p>
+  <button id="helpBtn" onclick="openDialog()">Help</button>
+
+  <!-- Confirmation Dialog -->
+  <dialog id="confirmDialog">
+    <p>⚠️ This service requires your location. Allow location access?</p>
+    <div class="dialog-actions">
+      <button onclick="handleNo()">No</button>
+      <button onclick="handleYes()">Yes</button>
+    </div>
+  </dialog>
+
+  <!-- Status message -->
+  <div id="status"></div>
+
+  <!-- Full-screen Flood Alert -->
+  <div id="floodAlert"></div>
+
+  <!-- Buzzer Sound -->
+  <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto"></audio>
+
+  <script>
+    const confirmDialog = document.getElementById('confirmDialog');
+    const statusBox = document.getElementById('status');
+    const floodAlert = document.getElementById('floodAlert');
+    const alertSound = document.getElementById('alertSound');
+
+    function openDialog() {
+      confirmDialog.showModal();
+    }
+
+    function handleYes() {
+      confirmDialog.close();
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+
+            // Show status
+            showStatus(`📍 Location received: ${lat}, ${lon}`, "success");
+
+            const payload = { latitude: lat, longitude: lon };
+
+            // Send location to backend
+            fetch("/post-location", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            })
+            .then(res => res.text())
+            .then(data => {
+              showStatus(`📧 ${data}`, "success");
+              showFloodAlert(`🚨 FLOOD ALERT!\nLocation: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            })
+            .catch(err => {
+              showStatus("❌ Error sending location to server.", "error");
+              console.error(err);
+            });
+          },
+          (err) => {
+            if (err.code === 1) {
+              showStatus("❌ You denied location access.", "error");
+              manualLocationPrompt();
+            } else if (err.code === 2) {
+              showStatus("⚠️ Location unavailable.", "error");
+            } else if (err.code === 3) {
+              showStatus("⌛ Request timed out.", "error");
+            }
+          }
+        );
+      } else {
+        showStatus("Geolocation not supported in this browser.", "error");
+      }
+    }
+
+    function handleNo() {
+      confirmDialog.close();
+      showStatus("Location cannot be accessed.", "error");
+    }
+
+    function manualLocationPrompt() {
+      const userLoc = prompt("Please enter your location (e.g. Hyderabad, India):");
+      if (userLoc) {
+        fetch("/post-location", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ manualLocation: userLoc })
+        })
+        .then(res => res.text())
+        .then(data => {
+          showStatus(`📧 ${data}`, "success");
+          showFloodAlert(`🚨 FLOOD ALERT!\nLocation: ${userLoc}`);
+        })
+        .catch(err => {
+          showStatus("❌ Error sending manual location.", "error");
+          console.error(err);
+        });
+      }
+    }
+
+    function showStatus(msg, type) {
+      statusBox.style.display = "block";
+      statusBox.textContent = msg;
+      statusBox.className = "";
+      statusBox.classList.add(type === "success" ? "success" : "error");
+    }
+
+    function showFloodAlert(msg) {
+      floodAlert.textContent = msg;
+      floodAlert.style.display = "block";
+      alertSound.play().catch(err => console.error("Sound play failed:", err));
+    }
+  </script>
+</body>
+</html>
